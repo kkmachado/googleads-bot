@@ -13,20 +13,26 @@ function brlToNumber(v) {
 
 async function captureCurrentMonthPayments() {
   const dataDir = process.env.DATA_DIR || '/app/data';
-  const sessionDir = path.join(dataDir, 'google-session');
   const screenshotsDir = path.join(dataDir, 'screenshots');
+  const storageStatePath = path.join(dataDir, 'storageState.json');
 
-  fs.mkdirSync(sessionDir, { recursive: true });
   fs.mkdirSync(screenshotsDir, { recursive: true });
 
-  const context = await chromium.launchPersistentContext(sessionDir, {
+  const browser = await chromium.launch({
     headless: true,
-    viewport: { width: 1440, height: 1400 },
-    locale: 'pt-BR',
-    timezoneId: 'America/Sao_Paulo',
   });
 
-  const page = context.pages()[0] || await context.newPage();
+  const contextOptions = {
+    locale: 'pt-BR',
+    timezoneId: 'America/Sao_Paulo',
+  };
+
+  if (fs.existsSync(storageStatePath)) {
+    contextOptions.storageState = storageStatePath;
+  }
+
+  const context = await browser.newContext(contextOptions);
+  const page = await context.newPage();
 
   page.setDefaultTimeout(30000);
   page.setDefaultNavigationTimeout(30000);
@@ -77,11 +83,13 @@ async function captureCurrentMonthPayments() {
 
     const paymentsText = `R$ ${match[1]}`;
     const paymentsValue = brlToNumber(paymentsText);
-
     const monthMatch = blockText.match(/^([^\n]+\(mês atual\))/im);
     const monthLabel = monthMatch ? monthMatch[1].trim() : 'mês atual';
 
+    await context.storageState({ path: storageStatePath });
+
     await context.close();
+    await browser.close();
 
     return {
       monthLabel,
@@ -92,7 +100,8 @@ async function captureCurrentMonthPayments() {
   } catch (error) {
     const screenshot = path.join(screenshotsDir, `capture-error-${Date.now()}.png`);
     await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
-    await context.close();
+    await context.close().catch(() => {});
+    await browser.close().catch(() => {});
     throw error;
   }
 }

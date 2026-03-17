@@ -12,12 +12,42 @@ function brlToNumber(v) {
 }
 
 function extractMoneyValues(text) {
-  const matches = [...text.matchAll(/R\$\s*[\d\.\,]+/g)].map(m => m[0]);
-  return matches;
+  return [...text.matchAll(/R\$\s*[\d\.\,]+/g)].map((m) => m[0]);
 }
 
 function normalizeMonthLabel(label) {
   return label.replace(/\s+/g, ' ').trim();
+}
+
+const monthMap = {
+  janeiro: 1,
+  fevereiro: 2,
+  março: 3,
+  abril: 4,
+  maio: 5,
+  junho: 6,
+  julho: 7,
+  agosto: 8,
+  setembro: 9,
+  outubro: 10,
+  novembro: 11,
+  dezembro: 12,
+};
+
+function extractMonthNumber(monthLabel) {
+  const normalized = monthLabel
+    .toLowerCase()
+    .replace(/\s+\(mês atual\)/i, '')
+    .trim();
+
+  return monthMap[normalized] || null;
+}
+
+function buildMonthDate(referenceYear, monthLabel) {
+  const monthNumber = extractMonthNumber(monthLabel);
+  if (!referenceYear || !monthNumber) return null;
+
+  return `${referenceYear}-${String(monthNumber).padStart(2, '0')}-01`;
 }
 
 async function captureBillingSummary() {
@@ -64,6 +94,10 @@ async function captureBillingSummary() {
       throw new Error(`Tela de login detectada. URL atual: ${currentUrl}`);
     }
 
+    const yearText = bodyText;
+    const yearMatch = yearText.match(/\b20\d{2}\b/);
+    const referenceYear = yearMatch ? Number(yearMatch[0]) : null;
+
     const monthRegex =
       /^(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+\(mês atual\))?$/i;
 
@@ -105,6 +139,7 @@ async function captureBillingSummary() {
 
       const entry = {
         monthLabel,
+        monthDate: buildMonthDate(referenceYear, monthLabel),
         currentMonth: /\(mês atual\)/i.test(monthLabel),
         netCostText: moneyValues[0],
         netCostValue: brlToNumber(moneyValues[0]),
@@ -114,7 +149,7 @@ async function captureBillingSummary() {
       };
 
       const exists = monthEntries.some(
-        item => item.monthLabel.toLowerCase() === entry.monthLabel.toLowerCase()
+        (item) => item.monthLabel.toLowerCase() === entry.monthLabel.toLowerCase()
       );
 
       if (!exists) {
@@ -127,10 +162,6 @@ async function captureBillingSummary() {
       await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
       throw new Error('Não consegui extrair nenhum mês do resumo de faturamento.');
     }
-
-    const yearText = await page.locator('body').innerText().catch(() => '');
-    const yearMatch = yearText.match(/\b20\d{2}\b/);
-    const referenceYear = yearMatch ? Number(yearMatch[0]) : null;
 
     await context.storageState({ path: storageStatePath });
 

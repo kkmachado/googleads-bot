@@ -11,7 +11,16 @@ function brlToNumber(v) {
   );
 }
 
-async function captureCurrentMonthPayments() {
+function extractMoneyValues(text) {
+  const matches = [...text.matchAll(/R\$\s*[\d\.\,]+/g)].map(m => m[0]);
+  return matches;
+}
+
+function normalizeMonthLabel(label) {
+  return label.replace(/\s+/g, ' ').trim();
+}
+
+async function captureBillingSummary() {
   const dataDir = process.env.DATA_DIR || '/app/data';
   const screenshotsDir = path.join(dataDir, 'screenshots');
   const storageStatePath = path.join(dataDir, 'storageState.json');
@@ -46,45 +55,82 @@ async function captureCurrentMonthPayments() {
     await page.waitForTimeout(5000);
 
     const currentUrl = page.url();
-    const title = await page.title().catch(() => '');
-
     if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
       throw new Error(`Sessão Google não autenticada. URL atual: ${currentUrl}`);
     }
 
     const bodyText = await page.locator('body').innerText().catch(() => '');
-
     if (/fazer login|sign in|login/i.test(bodyText)) {
       throw new Error(`Tela de login detectada. URL atual: ${currentUrl}`);
     }
 
-    const currentMonth = page.locator('text=(mês atual)').first();
-    const count = await currentMonth.count();
+    const monthRegex =
+      /^(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+\(mês atual\))?$/i;
 
-    if (!count) {
-      const screenshot = path.join(screenshotsDir, `no-current-month-${Date.now()}.png`);
-      await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
-      throw new Error(
-        `Não encontrei "(mês atual)". URL: ${currentUrl}. Título: ${title}. Início da página: ${bodyText.slice(0, 800)}`
+    const allTextLocators = page.locator('text=/./');
+    const count = await allTextLocators.count();
+
+    const monthEntries = [];
+
+    for (let i = 0; i < count; i++) {
+      const locator = allTextLocators.nth(i);
+      const rawText = (await locator.innerText().catch(() => '')).trim();
+
+      if (!monthRegex.test(rawText)) continue;
+
+      const monthLabel = normalizeMonthLabel(rawText);
+
+      let blockText = '';
+      let found = false;
+
+      for (let level = 1; level <= 10; level++) {
+        const container = locator.locator(`xpath=ancestor::*[self::div or self::section][${level}]`);
+        const text = await container.innerText().catch(() => '');
+
+        const hasCost = /Custo líquido/i.test(text);
+        const hasPayments = /Pagamentos/i.test(text);
+        const moneyValues = extractMoneyValues(text);
+
+        if (hasCost && hasPayments && moneyValues.length >= 2) {
+          blockText = text;
+          found = true;
+          break;
+        }
+      }
+
+      if (!found) continue;
+
+      const moneyValues = extractMoneyValues(blockText);
+      if (moneyValues.length < 2) continue;
+
+      const entry = {
+        monthLabel,
+        currentMonth: /\(mês atual\)/i.test(monthLabel),
+        netCostText: moneyValues[0],
+        netCostValue: brlToNumber(moneyValues[0]),
+        paymentsText: moneyValues[1],
+        paymentsValue: brlToNumber(moneyValues[1]),
+        rawText: blockText,
+      };
+
+      const exists = monthEntries.some(
+        item => item.monthLabel.toLowerCase() === entry.monthLabel.toLowerCase()
       );
+
+      if (!exists) {
+        monthEntries.push(entry);
+      }
     }
 
-    await currentMonth.waitFor({ timeout: 15000 });
-
-    const section = currentMonth.locator('xpath=ancestor::*[self::div or self::section][1]');
-    const blockText = await section.innerText();
-
-    const match = blockText.match(/Pagamentos\s*R\$\s*([\d\.\,]+)/i);
-    if (!match) {
-      const screenshot = path.join(screenshotsDir, `no-payments-${Date.now()}.png`);
+    if (!monthEntries.length) {
+      const screenshot = path.join(screenshotsDir, `no-months-${Date.now()}.png`);
       await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
-      throw new Error(`Não encontrei o campo Pagamentos. Texto do bloco: ${blockText}`);
+      throw new Error('Não consegui extrair nenhum mês do resumo de faturamento.');
     }
 
-    const paymentsText = `R$ ${match[1]}`;
-    const paymentsValue = brlToNumber(paymentsText);
-    const monthMatch = blockText.match(/^([^\n]+\(mês atual\))/im);
-    const monthLabel = monthMatch ? monthMatch[1].trim() : 'mês atual';
+    const yearText = await page.locator('body').innerText().catch(() => '');
+    const yearMatch = yearText.match(/\b20\d{2}\b/);
+    const referenceYear = yearMatch ? Number(yearMatch[0]) : null;
 
     await context.storageState({ path: storageStatePath });
 
@@ -92,9 +138,8 @@ async function captureCurrentMonthPayments() {
     await browser.close();
 
     return {
-      monthLabel,
-      paymentsText,
-      paymentsValue,
+      referenceYear,
+      months: monthEntries,
       capturedAt: new Date().toISOString(),
     };
   } catch (error) {
@@ -106,4 +151,4 @@ async function captureCurrentMonthPayments() {
   }
 }
 
-module.exports = { captureCurrentMonthPayments };
+module.exports = { captureBillingSummary };

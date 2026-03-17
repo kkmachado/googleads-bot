@@ -11,17 +11,13 @@ function brlToNumber(v) {
   );
 }
 
-async function ensureDirs(dataDir) {
-  fs.mkdirSync(path.join(dataDir, 'google-session'), { recursive: true });
-  fs.mkdirSync(path.join(dataDir, 'screenshots'), { recursive: true });
-}
-
 async function captureCurrentMonthPayments() {
   const dataDir = process.env.DATA_DIR || '/app/data';
   const sessionDir = path.join(dataDir, 'google-session');
   const screenshotsDir = path.join(dataDir, 'screenshots');
 
-  await ensureDirs(dataDir);
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(screenshotsDir, { recursive: true });
 
   const context = await chromium.launchPersistentContext(sessionDir, {
     headless: true,
@@ -32,23 +28,51 @@ async function captureCurrentMonthPayments() {
 
   const page = context.pages()[0] || await context.newPage();
 
+  page.setDefaultTimeout(30000);
+  page.setDefaultNavigationTimeout(30000);
+
   try {
     await page.goto('https://ads.google.com/aw/billing/summary', {
       waitUntil: 'domcontentloaded',
-      timeout: 120000,
+      timeout: 30000,
     });
 
-    await page.waitForLoadState('networkidle', { timeout: 120000 });
+    await page.waitForTimeout(5000);
+
+    const currentUrl = page.url();
+    const title = await page.title().catch(() => '');
+
+    if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
+      throw new Error(`Sessão Google não autenticada. URL atual: ${currentUrl}`);
+    }
+
+    const bodyText = await page.locator('body').innerText().catch(() => '');
+
+    if (/fazer login|sign in|login/i.test(bodyText)) {
+      throw new Error(`Tela de login detectada. URL atual: ${currentUrl}`);
+    }
 
     const currentMonth = page.locator('text=(mês atual)').first();
-    await currentMonth.waitFor({ timeout: 120000 });
+    const count = await currentMonth.count();
+
+    if (!count) {
+      const screenshot = path.join(screenshotsDir, `no-current-month-${Date.now()}.png`);
+      await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
+      throw new Error(
+        `Não encontrei "(mês atual)". URL: ${currentUrl}. Título: ${title}. Início da página: ${bodyText.slice(0, 800)}`
+      );
+    }
+
+    await currentMonth.waitFor({ timeout: 15000 });
 
     const section = currentMonth.locator('xpath=ancestor::*[self::div or self::section][1]');
     const blockText = await section.innerText();
 
     const match = blockText.match(/Pagamentos\s*R\$\s*([\d\.\,]+)/i);
     if (!match) {
-      throw new Error(`Não foi possível encontrar o campo Pagamentos. Texto capturado: ${blockText}`);
+      const screenshot = path.join(screenshotsDir, `no-payments-${Date.now()}.png`);
+      await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
+      throw new Error(`Não encontrei o campo Pagamentos. Texto do bloco: ${blockText}`);
     }
 
     const paymentsText = `R$ ${match[1]}`;
@@ -66,11 +90,8 @@ async function captureCurrentMonthPayments() {
       capturedAt: new Date().toISOString(),
     };
   } catch (error) {
-    const file = path.join(screenshotsDir, `capture-error-${Date.now()}.png`);
-    try {
-      await page.screenshot({ path: file, fullPage: true });
-    } catch {}
-
+    const screenshot = path.join(screenshotsDir, `capture-error-${Date.now()}.png`);
+    await page.screenshot({ path: screenshot, fullPage: true }).catch(() => {});
     await context.close();
     throw error;
   }

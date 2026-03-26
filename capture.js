@@ -94,9 +94,33 @@ async function captureBillingSummary() {
       throw new Error(`Tela de login detectada. URL atual: ${currentUrl}`);
     }
 
-    const yearText = bodyText;
-    const yearMatch = yearText.match(/\b20\d{2}\b/);
-    const referenceYear = yearMatch ? Number(yearMatch[0]) : null;
+    let referenceYear = null;
+
+    const yearCandidates = await page.locator('text=/^20\\d{2}$/').allInnerTexts().catch(() => []);
+
+    if (yearCandidates.length) {
+      const years = yearCandidates
+        .map((y) => Number(String(y).trim()))
+        .filter((y) => Number.isInteger(y) && y >= 2000 && y <= 2100);
+
+      if (years.length) {
+        referenceYear = Math.max(...years);
+      }
+    }
+
+    if (!referenceYear) {
+      const bodyYearMatches = [...bodyText.matchAll(/\b20\d{2}\b/g)]
+        .map((m) => Number(m[0]))
+        .filter((y) => Number.isInteger(y) && y >= 2000 && y <= 2100);
+
+      if (bodyYearMatches.length) {
+        referenceYear = Math.max(...bodyYearMatches);
+      }
+    }
+
+    if (!referenceYear) {
+      throw new Error('Não foi possível identificar o ano de referência.');
+    }
 
     const monthRegex =
       /^(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)(?:\s+\(mês atual\))?$/i;

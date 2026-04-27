@@ -50,6 +50,28 @@ function buildMonthDate(referenceYear, monthLabel) {
   return `${referenceYear}-${String(monthNumber).padStart(2, '0')}-01`;
 }
 
+async function notifySessionExpired(message) {
+  const webhookUrl = process.env.WEBHOOK_SESSION_EXPIRED_URL;
+  if (!webhookUrl) return;
+
+  await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'session_expired',
+      message,
+      occurredAt: new Date().toISOString(),
+      instructions: [
+        'A sessão do Google Ads expirou. Para reautenticar:',
+        '1. Abra o terminal na pasta do googleads-bot',
+        '2. Execute: PUBLIC_URL=https://marketing-googleads-bot.qqbqnt.easypanel.host REAUTH_SECRET=<seu-secret> node reauth-local.js',
+        '3. O browser vai abrir — faça login normalmente no Google Ads',
+        '4. O script envia a sessão para o servidor automaticamente',
+      ].join('\n'),
+    }),
+  }).catch(() => {});
+}
+
 async function captureBillingSummary() {
   const dataDir = process.env.DATA_DIR || '/app/data';
   const screenshotsDir = path.join(dataDir, 'screenshots');
@@ -86,12 +108,16 @@ async function captureBillingSummary() {
 
     const currentUrl = page.url();
     if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
-      throw new Error(`Sessão Google não autenticada. URL atual: ${currentUrl}`);
+      const message = `Sessão Google não autenticada. URL atual: ${currentUrl}`;
+      await notifySessionExpired(message);
+      throw new Error(message);
     }
 
     const bodyText = await page.locator('body').innerText().catch(() => '');
     if (/fazer login|sign in|login/i.test(bodyText)) {
-      throw new Error(`Tela de login detectada. URL atual: ${currentUrl}`);
+      const message = `Tela de login detectada. URL atual: ${currentUrl}`;
+      await notifySessionExpired(message);
+      throw new Error(message);
     }
 
     let referenceYear = null;

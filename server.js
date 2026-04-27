@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const { captureBillingSummary } = require('./capture');
 
@@ -18,6 +20,24 @@ app.post('/capture-billing-summary', async (_req, res) => {
       message: error.message,
       capturedAt: new Date().toISOString(),
     });
+  }
+});
+
+app.post('/reauth', (req, res) => {
+  const secret = process.env.REAUTH_SECRET;
+  if (secret && req.headers['x-reauth-secret'] !== secret) {
+    return res.status(401).json({ ok: false, message: 'Unauthorized' });
+  }
+
+  const dataDir = process.env.DATA_DIR || '/app/data';
+  const storageStatePath = path.join(dataDir, 'storageState.json');
+
+  try {
+    fs.mkdirSync(dataDir, { recursive: true });
+    fs.writeFileSync(storageStatePath, JSON.stringify(req.body, null, 2));
+    res.json({ ok: true, message: 'Sessão atualizada com sucesso' });
+  } catch (err) {
+    res.status(500).json({ ok: false, message: err.message });
   }
 });
 

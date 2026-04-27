@@ -43,6 +43,7 @@ A two-file Node.js service that scrapes the Google Ads billing summary page usin
 | `WEBHOOK_SESSION_EXPIRED_URL` | *(unset)* | If set, a POST is sent to this URL when a Google session expiry is detected |
 | `PUBLIC_URL` | `http://localhost:3000` | Public base URL of the service, included in webhook notification instructions |
 | `REAUTH_SECRET` | *(unset)* | If set, the `POST /reauth` endpoint requires the header `x-reauth-secret` with this value |
+| `GOOGLE_ADS_CUSTOMER_ID` | *(unset)* | If set, used to select the correct account on the Google Ads account selector screen (e.g. `628-123-7076`) |
 
 ## Re-authentication Flow
 

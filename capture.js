@@ -111,7 +111,7 @@ async function captureBillingSummary() {
 
     await page.waitForTimeout(3000);
 
-    const currentUrl = page.url();
+    let currentUrl = page.url();
     if (currentUrl.includes('accounts.google.com') || currentUrl.includes('signin')) {
       const message = `Sessão Google não autenticada. URL atual: ${currentUrl}`;
       await notifySessionExpired(message);
@@ -123,6 +123,27 @@ async function captureBillingSummary() {
       const message = `Tela de login detectada. URL atual: ${currentUrl}`;
       await notifySessionExpired(message);
       throw new Error(message);
+    }
+
+    if (currentUrl.includes('selectaccount')) {
+      const customerId = process.env.GOOGLE_ADS_CUSTOMER_ID;
+      if (customerId) {
+        const accountLink = page.locator(`text=${customerId}`).first();
+        await accountLink.click({ timeout: 10000 });
+      } else {
+        const accountLink = page
+          .locator('a, [role="button"], [role="link"]')
+          .filter({ hasNotText: /nova conta/i })
+          .first();
+        await accountLink.click({ timeout: 10000 });
+      }
+      await page.waitForURL((url) => !url.href.includes('selectaccount'), { timeout: 30000 });
+      await page.waitForFunction(
+        () => document.body && document.body.innerText.length > 500,
+        { timeout: 30000 }
+      ).catch(() => {});
+      await page.waitForTimeout(3000);
+      currentUrl = page.url();
     }
 
     let referenceYear = null;

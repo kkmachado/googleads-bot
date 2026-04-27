@@ -239,6 +239,26 @@ async function captureBillingSummary() {
       throw new Error('Não consegui extrair nenhum mês do resumo de faturamento.');
     }
 
+    let creditBalanceText = null;
+    let creditBalanceValue = null;
+
+    const creditLocator = page.locator('text=/você tem crédito/i').first();
+    const hasCreditText = await creditLocator.count().catch(() => 0);
+
+    if (hasCreditText) {
+      for (let level = 1; level <= 10; level++) {
+        const container = creditLocator.locator(`xpath=ancestor::*[self::div or self::section][${level}]`);
+        const text = await container.innerText().catch(() => '');
+        const moneyValues = extractMoneyValues(text);
+
+        if (moneyValues.length >= 1) {
+          creditBalanceText = moneyValues[0];
+          creditBalanceValue = brlToNumber(moneyValues[0]);
+          break;
+        }
+      }
+    }
+
     await context.storageState({ path: storageStatePath });
 
     await context.close();
@@ -246,6 +266,8 @@ async function captureBillingSummary() {
 
     return {
       referenceYear,
+      creditBalanceText,
+      creditBalanceValue,
       months: monthEntries,
       capturedAt: new Date().toISOString(),
     };

@@ -32,7 +32,8 @@ A two-file Node.js service that scrapes the Google Ads billing summary page usin
   3. Navigates to `https://ads.google.com/aw/billing/summary` and detects login redirects as errors
   4. Extracts a reference year from visible text, then walks all text nodes looking for Portuguese month names
   5. For each month, climbs up the DOM ancestry (up to 10 levels) to find a container with both "Custo líquido" and "Pagamentos" plus at least two BRL currency values
-  6. Returns `{ referenceYear, months[], capturedAt }` — each month entry includes parsed BRL values and a `monthDate` (`YYYY-MM-01`)
+  6. Extracts the account credit balance from the `.total-balance` CSS selector
+  7. Returns `{ referenceYear, creditBalanceText, creditBalanceValue, months[], capturedAt }` — each month entry includes parsed BRL values and a `monthDate` (`YYYY-MM-01`)
 
 ## Environment Variables
 

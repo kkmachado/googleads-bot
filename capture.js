@@ -150,7 +150,7 @@ async function captureBillingSummary() {
     }
 
     if (!referenceYear) {
-      throw new Error('Não foi possível identificar o ano de referência.');
+      throw new Error(`Não foi possível identificar o ano de referência. URL: ${page.url()} | Início do body: ${bodyText.slice(0, 300)}`);
     }
 
     const monthRegex =

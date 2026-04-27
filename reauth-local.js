@@ -18,7 +18,7 @@ async function reauth() {
 
   console.log('Faça login no Google Ads. Aguardando autenticação...');
   await page.waitForURL(
-    (url) => !url.includes('accounts.google.com') && !url.includes('signin'),
+    (url) => !url.href.includes('accounts.google.com') && !url.href.includes('signin'),
     { timeout: 120000 }
   );
 
